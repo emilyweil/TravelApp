@@ -66,7 +66,6 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
     const map = new google.maps.Map(mapDivRef.current, {
       center: { lat: 40.7831, lng: -73.9712 },
       zoom: 15,
-      mapId: 'curiosity_map',
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: false,
@@ -182,18 +181,43 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
   }
 
   // ── Pin form ──────────────────────────────────────────────────
+  const tempMarkerRef = useRef(null)
+
   const openNewPinForm = (coords, autoName) => {
+    // Place a temporary marker immediately so user sees where pin will go
+    if (gmapRef.current && window.google?.maps?.marker) {
+      if (tempMarkerRef.current) tempMarkerRef.current.map = null
+      const { AdvancedMarkerElement } = google.maps.marker
+      const tempPin = { type: 'curiosity' }
+      const el = makePinEl(tempPin)
+      tempMarkerRef.current = new AdvancedMarkerElement({
+        position: { lat: coords.lat, lng: coords.lng },
+        map: gmapRef.current,
+        content: el,
+        zIndex: 200,
+      })
+    }
     setFormState({ label: autoName || '', type: 'curiosity', question: '' })
     setPanel({ mode: 'new', coords, pin: null })
   }
 
   const closePanel = () => {
+    // Remove temp marker if form cancelled
+    if (tempMarkerRef.current) {
+      tempMarkerRef.current.map = null
+      tempMarkerRef.current = null
+    }
     setPanel(null)
     speechSynthesis.cancel()
     setSpeaking(false)
   }
 
   const handleSave = async () => {
+    // Remove temp marker — real one will appear via pins useEffect
+    if (tempMarkerRef.current) {
+      tempMarkerRef.current.map = null
+      tempMarkerRef.current = null
+    }
     const { coords } = panel
     const q = formState.question.trim()
     const pinData = {
