@@ -47,6 +47,8 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
 
   const [mapsReady, setMapsReady] = useState(false)
   const [dropping, setDropping]   = useState(false)
+  const droppingRef = useRef(false)
+  const openNewPinFormRef = useRef(null)
   const [panel, setPanel]         = useState(null)  // null | { mode:'new'|'view', pin, coords }
   const [formState, setFormState] = useState({ label: '', type: 'curiosity', question: '' })
   const [pendingPin, setPendingPin] = useState(null)
@@ -59,6 +61,9 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
   useEffect(() => {
     loadGoogleMaps().then(() => setMapsReady(true)).catch(console.error)
   }, [])
+
+  // ── Keep droppingRef in sync ──────────────────────────────────
+  useEffect(() => { droppingRef.current = dropping }, [dropping])
 
   // ── Init map ──────────────────────────────────────────────────
   useEffect(() => {
@@ -77,10 +82,10 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
     geocoderRef.current = new google.maps.Geocoder()
 
     map.addListener('click', e => {
-      if (!dropping) return
+      if (!droppingRef.current) return
       const lat = e.latLng.lat(), lng = e.latLng.lng()
       setDropping(false)
-      openNewPinForm({ lat, lng }, null)
+      openNewPinFormRef.current({ lat, lng }, null)
     })
 
     return () => { /* map cleanup not needed */ }
@@ -200,6 +205,7 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
     setFormState({ label: autoName || '', type: 'curiosity', question: '' })
     setPanel({ mode: 'new', coords, pin: null })
   }
+  openNewPinFormRef.current = openNewPinForm
 
   const closePanel = () => {
     setPendingPin(null)
