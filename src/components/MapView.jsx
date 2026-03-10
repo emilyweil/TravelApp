@@ -49,6 +49,7 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
   const [dropping, setDropping]   = useState(false)
   const [panel, setPanel]         = useState(null)  // null | { mode:'new'|'view', pin, coords }
   const [formState, setFormState] = useState({ label: '', type: 'curiosity', question: '' })
+  const [pendingPin, setPendingPin] = useState(null)
   const [suggestions, setSuggestions]   = useState([])
   const [searchVal, setSearchVal]       = useState('')
   const [speaking, setSpeaking]       = useState(false)
@@ -186,8 +187,6 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
   }
 
   // ── Pin form ──────────────────────────────────────────────────
-  const [pendingPin, setPendingPin] = useState(null)
-
   const openNewPinForm = (coords, autoName) => {
     const pending = {
       id: `pending_${Date.now()}`,
