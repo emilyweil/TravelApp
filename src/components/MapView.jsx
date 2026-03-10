@@ -51,8 +51,7 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
   const [formState, setFormState] = useState({ label: '', type: 'curiosity', question: '' })
   const [suggestions, setSuggestions]   = useState([])
   const [searchVal, setSearchVal]       = useState('')
-  const [selPlace, setSelPlace]         = useState(null)
-  const [speaking, setSpeaking]         = useState(false)
+  const [speaking, setSpeaking]       = useState(false)
   const sugTimerRef = useRef(null)
 
   // ── Load Google Maps ──────────────────────────────────────────
@@ -66,6 +65,7 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
     const map = new google.maps.Map(mapDivRef.current, {
       center: { lat: 40.7831, lng: -73.9712 },
       zoom: 15,
+      mapId: 'curiosity_map',
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: false,
@@ -85,11 +85,16 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
     return () => { /* map cleanup not needed */ }
   }, [mapsReady]) // eslint-disable-line
 
-  // ── Sync markers with pins ────────────────────────────────────
+  // ── Sync markers with pins + pendingPin ──────────────────────
   useEffect(() => {
     if (!mapsReady || !gmapRef.current) return
     const { AdvancedMarkerElement } = google.maps.marker
-    const currentIds = new Set(pins.map(p => String(p.id)))
+
+    const allPins = pendingPin
+      ? [...pins.filter(p => String(p.id) !== String(pendingPin.id)), pendingPin]
+      : pins
+
+    const currentIds = new Set(allPins.map(p => String(p.id)))
 
     // Remove markers for deleted pins
     Object.keys(markersRef.current).forEach(id => {
@@ -100,33 +105,35 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
     })
 
     // Add/update markers
-    pins.forEach(pin => {
+    allPins.forEach(pin => {
       const sid = String(pin.id)
       if (markersRef.current[sid]) {
         markersRef.current[sid].content = makePinEl(pin)
       } else {
         const el = makePinEl(pin)
         const m = new AdvancedMarkerElement({
-          position: { lat: pin.lat, lng: pin.lng },
+          position: { lat: Number(pin.lat), lng: Number(pin.lng) },
           map: gmapRef.current,
-          title: pin.label,
+          title: pin.label || '',
           content: el,
-          gmpDraggable: true,
-          zIndex: 100,
+          gmpDraggable: !pin._pending,
+          zIndex: pin._pending ? 200 : 100,
         })
-        m.addListener('click', () => {
-          setPanel({ mode: 'view', pin })
-        })
-        m.addListener('dragend', async (event) => {
-          const lat = event.latLng.lat()
-          const lng = event.latLng.lng()
-          const updated = { ...pin, lat, lng }
-          await onUpdatePin(updated)
-        })
+        if (!pin._pending) {
+          m.addListener('click', () => {
+            setPanel({ mode: 'view', pin })
+          })
+          m.addListener('dragend', async (event) => {
+            const lat = event.latLng.lat()
+            const lng = event.latLng.lng()
+            const updated = { ...pin, lat, lng }
+            await onUpdatePin(updated)
+          })
+        }
         markersRef.current[sid] = m
       }
     })
-  }, [pins, mapsReady]) // eslint-disable-line
+  }, [pins, pendingPin, mapsReady]) // eslint-disable-line
 
   // ── Search ────────────────────────────────────────────────────
   const doSearch = useCallback(async (query) => {
@@ -159,7 +166,6 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
 
   const onSearchInput = (val) => {
     setSearchVal(val)
-    setSelPlace(null)
     clearTimeout(sugTimerRef.current)
     sugTimerRef.current = setTimeout(() => doSearch(val), 350)
   }
@@ -167,7 +173,6 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
   const pickSuggestion = (item) => {
     setSearchVal('')
     setSuggestions([])
-    setSelPlace(null)
     if (item.vp) {
       gmapRef.current?.fitBounds({
         south: item.vp.southwest.lat, west: item.vp.southwest.lng,
@@ -181,43 +186,31 @@ export default function MapView({ pins, onAddPin, onUpdatePin, onDeletePin }) {
   }
 
   // ── Pin form ──────────────────────────────────────────────────
-  const tempMarkerRef = useRef(null)
+  const [pendingPin, setPendingPin] = useState(null)
 
   const openNewPinForm = (coords, autoName) => {
-    // Place a temporary marker immediately so user sees where pin will go
-    if (gmapRef.current && window.google?.maps?.marker) {
-      if (tempMarkerRef.current) tempMarkerRef.current.map = null
-      const { AdvancedMarkerElement } = google.maps.marker
-      const tempPin = { type: 'curiosity' }
-      const el = makePinEl(tempPin)
-      tempMarkerRef.current = new AdvancedMarkerElement({
-        position: { lat: coords.lat, lng: coords.lng },
-        map: gmapRef.current,
-        content: el,
-        zIndex: 200,
-      })
+    const pending = {
+      id: `pending_${Date.now()}`,
+      lat: coords.lat,
+      lng: coords.lng,
+      type: 'curiosity',
+      label: autoName || '',
+      _pending: true,
     }
+    setPendingPin(pending)
     setFormState({ label: autoName || '', type: 'curiosity', question: '' })
     setPanel({ mode: 'new', coords, pin: null })
   }
 
   const closePanel = () => {
-    // Remove temp marker if form cancelled
-    if (tempMarkerRef.current) {
-      tempMarkerRef.current.map = null
-      tempMarkerRef.current = null
-    }
+    setPendingPin(null)
     setPanel(null)
     speechSynthesis.cancel()
     setSpeaking(false)
   }
 
   const handleSave = async () => {
-    // Remove temp marker — real one will appear via pins useEffect
-    if (tempMarkerRef.current) {
-      tempMarkerRef.current.map = null
-      tempMarkerRef.current = null
-    }
+    setPendingPin(null)
     const { coords } = panel
     const q = formState.question.trim()
     const pinData = {
